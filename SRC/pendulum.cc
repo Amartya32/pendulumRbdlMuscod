@@ -1,9 +1,10 @@
 /*
-@author M.Millard 2015
+@author M.Millard 2019
 
-A toy problem just for learning:
+A simple example of pairing an RBDL model with a minimization OCP,
+and a least-squares OCP that is solved using MUSCOD-II.
 
-    Single pendulum:
+Single pendulum:
     ic: rest at 9 o'clock (gravity points at 6 o'clock)
     ec: rest at 12 o'clock 
     cost: integral of torque squared
@@ -61,7 +62,6 @@ int nxa    =  0;  /* Number of algebraic states */
 int nu     = -1;  /* Number of controls */
 int npr    =  0;  /* Number of local parameters */
 
-
 vector< vector < double > > posRecMatrix;
 string meshupFileName = "RES/meshup_pendulum.csv";
 
@@ -69,26 +69,60 @@ string meshupFileName = "RES/meshup_pendulum.csv";
 vector< vector < double > > dataRecMatrix;
 string dataFileName = "results.csv";
 
-string modelFile            ;//="../model/MetaLuaModel2d.lua";
-string datFileName          ;//="../DAT/MuscleDrivenWalker.dat";
-string lsqTargetStateTrajectory ;//= "../expData/qIK.csv";
+string modelFile      ;
+string datFileName    ;
 double lsqRegWeighting;
-bool isMinProblem;
-bool isLSQProblem;
+
 /*
 //No Mayer cost for this problem, so its not included
 static void mfcn(double *ts, double *sd, double *sa,
 double *p, double *pr, double *mval, long *dpnd, InfoPtr *info)
 */
+//==============================================================================
+int nlsq = pendulumModel.lsqCountQ + pendulumModel.lsqCountQDot;
+void lsqfcn(double *t, double *sd, double *sa, double *u,
+      double *p, double *pr, double *res, long *dpnd,
+      InfoPtr *info) {
 
+  if (*dpnd) {
+    *dpnd = RFCN_DPND(*t, *sd, 0, *u, 0, 0);
+    return;
+  }
+
+  unsigned int idx = 0;
+  pendulumModel.updateState(sd,u,p);
+  pendulumModel.updateStateLsq(t);
+
+  //Here you can see how the append functions can be called one
+  //after the other. This allows you add/remove blocks of functions
+  //easily without having to edit the detailed underlying code.
+  //This is a useful stategy to adopt so that you can eliminate
+  //careless typos due to repeated editing: there are many many
+  //errors that will allow MUSCOD to run, but the problem will simply
+  //not converge. These are very time consuming to debug: these kinds
+  //of bugs can stop progress for literally months for someone who has
+  //limited experience with modeling, optimal control, MUSCOD-II and C++.
+
+  idx = pendulumModel.appendLsqErrorQ(res,idx);
+  idx = pendulumModel.appendLsqErrorQDot(res,idx);
+  unsigned int lsqCount = pendulumModel.lsqCountQ + pendulumModel.lsqCountQDot;
+  assert(idx = lsqCount);
+
+}
+
+//==============================================================================
 static void lfcn(   double *t, double *sd,  double *sa,  double *u,
                    double *p, double *lval,double *rwh,  long *iwh, 
                                                      InfoPtr *info)
 {
-   double tau = u[0];
-  *lval = tau*tau ;
+   double scaling = 1.0;
+   if(pendulumModel.isLeastSquaresProblem()){
+     scaling = lsqRegWeighting;
+   }
+  *lval = pendulumModel.calcCostTauSquared(scaling) ;
 }
 
+//==============================================================================
 static void ffcn(  double *t, double *sd, double *sa, double *u,
             double *p,  double *rhs,  double *rwh,  long *iwh, 
                                                 InfoPtr *info)
@@ -99,7 +133,13 @@ static void ffcn(  double *t, double *sd, double *sa, double *u,
 
 }
 
-static void ic(  double *ts, double *sd, double *sa,     double *u,
+//==============================================================================
+// (n)umber of (e)quality constraint entries
+static int rdfcn_icCount_ne  = pendulumModel.eqCountIC;
+// (n)umber of constraint entries: the sum of equality and inequality constraints
+static int rdfcn_icCount_n   = rdfcn_icCount_ne + 0; //
+
+static void rdfcn_ic(  double *ts, double *sd, double *sa,     double *u,
                 double *p,  double *pr, double *res,    long *dpnd, 
                                                     InfoPtr *info)
 {
@@ -108,14 +148,36 @@ static void ic(  double *ts, double *sd, double *sa,     double *u,
         *dpnd = RFCN_DPND(0, *sd, 0, 0, 0, 0);
         return;
     }    
+    //This function does not depend on u (as noted in RFCN_DPND) I still
+    //need a placeholder for the value for 'u' that goes into updateState
+    double uTemp[1];
+    uTemp[0] = 0.;
 
+    unsigned int idx = 0;
+    pendulumModel.updateState(sd,uTemp,p);
+    idx = pendulumModel.appendEqIC(res,idx);
 
-    res[0] = sd[0] - (-M_PI/2.0);
-    res[1] = sd[1] - 0;
+    //At the end of the equality constraint block we assert that
+    //the index idx has the same value as the number of equality constraints.
+    //Why? Nothing will prevent you from putting too few, or too many values
+    //     in res. This can result in a *very* hard to debug optimal control
+    //     problem. It is far better to put these assert statements in place
+    //     (which stop the program if they are false) and run the problem in
+    //     debug mode for 1 iteration.
+    assert(idx == rdfcn_icCount_ne);
+
+    //There are no inequality constraints for this problem, but they would
+    //go here.
+    assert(idx == rdfcn_icCount_n);
 }
 
+//==============================================================================
+// (n)umber of (e)quality constraint entries
+static int rdfcn_fcCount_ne  = pendulumModel.eqCountFC;
+// (n)umber of constraint entries: the sum of equality and inequality constraints
+static int rdfcn_fcCount_n   = rdfcn_fcCount_ne + 0; //
 
-static void fc(  double *ts, double *sd, double *sa,     double *u,
+static void rdfcn_fc(  double *ts, double *sd, double *sa,     double *u,
                 double *p,  double *pr, double *res,    long *dpnd, 
                                                     InfoPtr *info)
 {
@@ -123,14 +185,25 @@ static void fc(  double *ts, double *sd, double *sa,     double *u,
     if (*dpnd) {
         *dpnd = RFCN_DPND(0, *sd, 0, 0, 0, 0);
         return;
-    }    
+    }
 
-    res[0] = sd[0] - M_PI;
-    res[1] = sd[1] - 0;
+    //This function does not depend on u (as noted in RFCN_DPND) I still
+    //need a placeholder for the value for 'u' that goes into updateState
+    double uTemp[1];
+    uTemp[0] = 0.;
+
+    unsigned int idx = 0;
+    pendulumModel.updateState(sd,uTemp,p);
+    idx = pendulumModel.appendEqFC(res,idx);
+    assert(idx == rdfcn_fcCount_ne);
+
+    //There are no inequality constraints for this problem, but they would
+    //go here.
+    assert(idx == rdfcn_fcCount_n);
 }
 
 
-
+//==============================================================================
 //Called at every successful integrator step
 void mplo(  double *t,                  //time
                 double *sd,                 //differential state
@@ -216,6 +289,7 @@ void mplo(  double *t,                  //time
 
 }
 
+//==============================================================================
 //Called at the beginning and end of every shooting interval
 void mout
 (
@@ -252,11 +326,7 @@ void mout
 
 }
 
-
-
-
-
-
+//==============================================================================
 // Entry point for the muscod application
 extern "C" void def_model(void);
 void def_model(void)
@@ -268,7 +338,7 @@ void def_model(void)
 
     modelFile            = datfile_get_string(datFileName.c_str(),"modelFile");
 
-    lsqTargetStateTrajectory = datfile_get_string(datFileName.c_str(),
+    string lsqDataFile   = datfile_get_string(datFileName.c_str(),
                                 "lsqProblemTargetStateTrajectoryFile");
 
     lsqRegWeighting      = datfile_get_double(datFileName.c_str(),
@@ -277,39 +347,27 @@ void def_model(void)
     int problemType = datfile_get_int(datFileName.c_str(),
                                       "problemType");
 
-    switch(problemType){
-      case 0:{
-        isMinProblem = true;
-        isLSQProblem = false;
-      } break;
-      case 1:{
-        isMinProblem = false;
-        isLSQProblem = true;
-      } break;
-      default:{
-        std::cerr << " Error: problemType must be 0 or 1."
-                  << " This is the value that was read: "
-                  << problemType << std::endl;
-        assert(0);
-        abort();
-      }
-    }
+    pendulumModel = PendulumModel(modelFile,lsqDataFile,problemType,true);
 
     cout << endl;
     cout << "Dat file name            : " << datFileName << endl;
-    if(isMinProblem){
+    if(pendulumModel.isMinimizationProblem()){
       cout<<"Problem Type             : Minimization" << endl;
     }
-    if(isLSQProblem){
+    if(pendulumModel.isLeastSquaresProblem()){
       cout<<"Problem Type             : Least-Squares" << endl;
     }
     cout << "Model file               : " << modelFile << endl;
-    cout << "LSQ target states file   : " << lsqTargetStateTrajectory << endl;
+    cout << "LSQ target states file   : " << lsqDataFile << endl;
     cout << "LSQ Reg. Weighting: "    << lsqRegWeighting << endl;
     cout << endl;
 
-    pendulumModel = PendulumModel(modelFile, true);
-  
+
+
+    //The code below assumes that this is a 1 dof pendulum.
+    //Check to make sure this hasn't changed.
+    assert(pendulumModel.getDofCount() == 1);
+
     vector< double > sdTest(2);
     vector< double > uTest(1);
     vector< double > rhsTest(2);
@@ -319,7 +377,7 @@ void def_model(void)
     //                you should get. Numerically evalute this if possible, or
     //                if the model is very simple (as in this case) just print
     //                it to screen.
-    assert(pendulumModel.getDofCount() == 1);
+
     printf("----------------------------------------\n");
     printf("Numerical check of the model: \n");
     printf("  Setting the model state and evaluating its"
@@ -350,6 +408,9 @@ void def_model(void)
     nxa     = 0;
     nu      = pendulumModel.getDofCount();
 
+    printf("\n");
+    printf("----------------------------------------\n");
+    printf("Problem Dimensions\n");
     printf( "nmos: %i, np: %i, nrc: %i, nrce: %i nxd: %i "
             "nxa: %i nu: %i\n",
             nmos, np, nrc, nrce, nxd, nxa, nu);
@@ -372,33 +433,34 @@ void def_model(void)
                 NULL,   //rwh : real work array-to pass common stage data
                 NULL ); //iwh : integer work array-to pass common stage data
 
-    def_mpc(0,          //Stage index
-            "s",        //scope
-            npr,        //number of local parameters
-            2,          //Dimension of the decoupled residual
-            2,          //Number of zeros
-            ic,         //Decoupled constraint function handle
-            NULL);      //Coupled constraint function handle;
+
+    def_mpc(0,                //Stage index
+            "s",              //scope
+            npr,              //number of local parameters
+            rdfcn_icCount_n,  //Dimension of the decoupled residual
+            rdfcn_icCount_ne, //Number of zeros
+            rdfcn_ic,         //Decoupled constraint function handle
+            NULL);            //Coupled constraint function handle;
 
 
-    def_mpc(0,          //Stage index
-            "e",        //scope
-            npr,        //number of local parameters
-            2,          //Dimension of the decoupled residual
-            2,          //Number of zeros
-            fc,         //Decoupled constraint function handle
-            NULL);      //Coupled constraint function handle;
+    def_mpc(0,                //Stage index
+            "e",              //scope
+            npr,              //number of local parameters
+            rdfcn_fcCount_n,  //Dimension of the decoupled residual
+            rdfcn_fcCount_ne, //Number of zeros
+            rdfcn_fc,         //Decoupled constraint function handle
+            NULL);            //Coupled constraint function handle;
+
+
           
+    def_mio (   NULL ,      //minp
+                mout,       //mout
+                mplo);      //mplo
 
-    def_mio (   NULL ,     //minp
-                mout,      //mout
-                mplo); //mplo
-
-
+    if(pendulumModel.isLeastSquaresProblem()){
+        def_lsq (0, "i", 0, nlsq, lsqfcn);
+    }
     
-    
-
-
 }
 
 

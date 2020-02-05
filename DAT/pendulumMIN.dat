@@ -1,7 +1,7 @@
 *
-*   Pedagogical Pendulum Example
+*   Pedagogical Example: minimization problem
 *
-*   @author M.Millard 2015
+*   @author M.Millard 2020
 *
 *
 
@@ -18,10 +18,11 @@ modelFile
 ../DAT/pendulum.lua
 
 lsqProblemTargetStateTrajectoryFile
-../DAT/pendulumStatesLSQ.csv
+../DAT/lsqDataToTrack.csv
 
 lsqRegularizationWeighting
 1.000000e-03
+
 
 * 
 * Muscod Settings
@@ -140,13 +141,13 @@ libmodel
   libpendulum
 
 libhessian
-hess_finitediff
+hess_update
 
 libsolve
 solve_slse
 
 libcond
-cond_min
+cond_stable
 
 libtchk
 tchk
@@ -171,7 +172,7 @@ plot_pgplot
 **********************************
 
 options_acc
-1e-6
+1e-5
 options_ftol
 -1.0
 options_itol

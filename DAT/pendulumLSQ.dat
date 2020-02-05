@@ -1,10 +1,27 @@
 *
-*   Pedagogical Pendulum Example
+*   Pedagogical Pendulum Example: Least-squares problem
 *
-*   @author M.Millard 2015
+*   @author M.Millard 2020
 *
 *
 
+*
+* User-defined variables 
+*   Note: here the '*' is the comment character
+
+
+* ProblemType: 0: minimization, 1: LSQ
+problemType
+1
+
+modelFile
+../DAT/pendulum.lua
+
+lsqProblemTargetStateTrajectoryFile
+../DAT/lsqDataToTrack.csv
+
+lsqRegularizationWeighting
+1.000000e-03
 
 *  # of multiple shooting intervals on each model stage
 nshoot
@@ -29,16 +46,19 @@ nshoot
 * h_max : maximum.
 *  model stage duration start values, scale factors, and bounds
 h
-0: 1.5
+0: 1.0
 
 h_sca
 ALL: 1.0
 
 h_min
-0: 1
+ALL: 1.0
 
 h_max
-0: 10.0
+ALL: 1.0
+
+h_fix
+ALL: 1.0
 
 
 *  specification mode for differential state variable start
@@ -95,13 +115,13 @@ ALL: 0
 
 
 u_sca(*,*)
-0: 1.0
+0: 1
 
 u_min(*,*)
-0: -40.0
+0: -60.0
 
 u_max(*,*)
-0: 40.0
+0: 60.0
 
 
 
@@ -132,13 +152,13 @@ libmodel
   libpendulum
 
 libhessian
-hess_finitediff
+hess_gaussnewton
 
 libsolve
 solve_slse
 
 libcond
-cond_min
+cond_stable
 
 libtchk
 tchk
@@ -163,7 +183,7 @@ plot_pgplot
 **********************************
 
 options_acc
-1e-6
+1e-5
 options_ftol
 -1.0
 options_itol
@@ -173,7 +193,7 @@ options_rfac
 options_levmar
 0.1
 options_qp_featol
-1.0e-8
+1.0e-7
 options_qp_relax
 1.1
 options_nhtopy
@@ -183,7 +203,7 @@ options_frstart
 options_frmax
 0
 options_itmax
-5000
+10000
 options_plevel_screen
 0
 options_plevel_file
