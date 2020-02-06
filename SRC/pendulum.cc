@@ -119,6 +119,7 @@ static void lfcn(   double *t, double *sd,  double *sa,  double *u,
    if(pendulumModel.isLeastSquaresProblem()){
      scaling = lsqRegWeighting;
    }
+   pendulumModel.updateState(sd,u,p);
   *lval = pendulumModel.calcCostTauSquared(scaling) ;
 }
 
