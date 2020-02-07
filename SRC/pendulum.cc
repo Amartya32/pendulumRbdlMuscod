@@ -63,11 +63,11 @@ int nu     = -1;  /* Number of controls */
 int npr    =  0;  /* Number of local parameters */
 
 vector< vector < double > > posRecMatrix;
-string meshupFileName = "RES/meshup_pendulum.csv";
+string meshupFileName = "RES/meshupPendulum.csv";
 
 
 vector< vector < double > > dataRecMatrix;
-string dataFileName = "results.csv";
+string dataFileName = "RES/simulationDataPendulum.csv";
 
 string modelFile      ;
 string datFileName    ;
@@ -175,6 +175,8 @@ static void rdfcn_ic(  double *ts, double *sd, double *sa,     double *u,
 //==============================================================================
 // (n)umber of (e)quality constraint entries
 static int rdfcn_fcCount_ne  = pendulumModel.eqCountFC;
+//static int rdfcn_fcCount_ne  = pendulumModel.eqCountFC_OverConstrained;
+
 // (n)umber of constraint entries: the sum of equality and inequality constraints
 static int rdfcn_fcCount_n   = rdfcn_fcCount_ne + 0; //
 
@@ -196,6 +198,7 @@ static void rdfcn_fc(  double *ts, double *sd, double *sa,     double *u,
     unsigned int idx = 0;
     pendulumModel.updateState(sd,uTemp,p);
     idx = pendulumModel.appendEqFC(res,idx);
+    //idx = pendulumModel.appendEqFC_OverConstrained(res,idx);
     assert(idx == rdfcn_fcCount_ne);
 
     //There are no inequality constraints for this problem, but they would
@@ -205,7 +208,7 @@ static void rdfcn_fc(  double *ts, double *sd, double *sa,     double *u,
 
 
 //==============================================================================
-//Called at every successful integrator step
+//Called after every successful integrator step
 void mplo(  double *t,                  //time
                 double *sd,                 //differential state
                 double *sa,                 //algebraic state
@@ -217,11 +220,24 @@ void mplo(  double *t,                  //time
 
 
 
-    //Time to print the files.
+    //When t == 0 it means that the entire time simulation has completed and
+    //that the data stored in posRecMatrix and dataRecMatrix is complete.
+    //Write these matrices to csv file, and then clear them so that they
+    //are ready to store data for the next simulation.
+    //
+    // Note: This is written such that at every SQP iteration this data
+    //       is accumulated and written: this does slow things down. If 
+    //       you'd like to save on some computation you can prevent this 
+    //       method from being called by setting "libplot" to "plot_noplot" in 
+    //       the DAT file. After the problem has converged (or ended) you 
+    //       can always get the information for the last iteration by running
+    //       muscod warm with a single iteration. For this problem this command
+    //       would be: "muscod_release -w -i0 pendulumMIN".
     if(*t == 0.){
 
         bool append = false;
 
+        //Write the data needed to animate the model to file
         if(posRecMatrix.size() > 1){        
             string emptyHeader = "";
             printMatrixToFile(  posRecMatrix, 
@@ -229,9 +245,9 @@ void mplo(  double *t,                  //time
                                 meshupFileName, 
                                 append);
             posRecMatrix.clear();
-           //posRecMatrix.resize(1);
         }   
 
+        //Write the the entire set of post-processing data to file.
         if(dataRecMatrix.size() > 1){            
             char buffer[500];
             snprintf(buffer, 500, "%s","time,");
@@ -249,14 +265,13 @@ void mplo(  double *t,                  //time
 
 
             dataRecMatrix.clear();
-            //dataRecMatrix.resize(1);
+
         }
 
 
     }else{
 
-        //accumulate the position matrix
-        
+        //accumulate the data needed to animate the model: time, q_0, ... q_N
         vector < double > posRecVector(1 + nxd/2);            
         int idx = 0;
         posRecVector[idx] = t[0];
@@ -267,10 +282,11 @@ void mplo(  double *t,                  //time
         }
         posRecMatrix.push_back(posRecVector);
 
-        //accumulate the data matrix
-        
+        //accumulate all of the data that we want to extract from this
+        //model and simualulation for post-processing purposes. Here we'll
+        //write time, q, qdot, and u. 
+
         vector < double > dataRecVector(1 + nxd + nu);
-        //dataRecVector.resize(1 + nxd + nu);
 
         idx = 0;
         dataRecVector[idx] =  t[0];
@@ -364,7 +380,7 @@ void def_model(void)
     cout << endl;
 
 
-
+    //assert(false);
     //The code below assumes that this is a 1 dof pendulum.
     //Check to make sure this hasn't changed.
     assert(pendulumModel.getDofCount() == 1);

@@ -203,3 +203,15 @@ unsigned int PendulumModel::
   ++idx;
   return idx;
 }
+
+unsigned int PendulumModel::
+  appendEqFC_OverConstrained(double *res, unsigned int idx)
+{
+  res[idx] = q[0] - (M_PI);
+  ++idx;
+  res[idx] = qDot[0] - 0;
+  ++idx;
+  res[idx] = (qDot[0] - 0)*(q[0] - (M_PI));
+  ++idx;
+  return idx;
+}

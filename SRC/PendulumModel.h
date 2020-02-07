@@ -131,6 +131,8 @@ class PendulumModel {
     unsigned int appendEqFC(double *res, unsigned int idx);
     const static int eqCountFC = 2; //Number of entries for this constraint
 
+    unsigned int appendEqFC_OverConstrained(double *res, unsigned int idx);
+    const static int eqCountFC_OverConstrained = 3; //Number of entries for this constraint
 
   private:
 

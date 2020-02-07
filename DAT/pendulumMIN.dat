@@ -180,11 +180,11 @@ options_itol
 options_rfac
 0.0
 options_levmar
-0.1
+0.0
 options_qp_featol
 1.0e-8
 options_qp_relax
-1.1
+1.0
 options_nhtopy
 0
 options_frstart
